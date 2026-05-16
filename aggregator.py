@@ -33,7 +33,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("zernproxy")
 
-BASE_DIR = "/opt/aggregator"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SERVERS_CONF = os.path.join(BASE_DIR, "servers.conf")
 SETTINGS_CONF = os.path.join(BASE_DIR, "settings.conf")
 USERS_DB = os.path.join(BASE_DIR, "users.db")
