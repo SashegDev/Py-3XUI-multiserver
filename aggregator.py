@@ -130,7 +130,7 @@ def load_configs():
             "free": {"name": "Free", "servers": [], "traffic_limit_gb": 0},
             "paid": {"name": "Premium", "servers": [], "traffic_limit_gb": 0}
         },
-        "payments": {"donationalerts": {"enabled": False}}
+        "payments": {"donationalerts": {"enabled": False, "api_token": "", "webhook_secret": "", "check_interval_minutes": 5}}
     })
     logger.info(f"Loaded {len(servers)} servers")
 
@@ -645,6 +645,14 @@ async def get_web_page(subscription_id: str):
 
 @app.post("/payment/webhook/donationalerts")
 async def webhook_donationalerts(request: Request):
+    da_config = settings.get("payments", {}).get("donationalerts", {})
+    webhook_secret = da_config.get("webhook_secret", "")
+    
+    if webhook_secret:
+        provided = request.headers.get("X-Webhook-Secret", "")
+        if provided != webhook_secret:
+            return JSONResponse({"error": "Invalid secret"}, status_code=403)
+    
     try:
         data = await request.json()
     except:
@@ -653,9 +661,9 @@ async def webhook_donationalerts(request: Request):
     amount = data.get("amount", 0)
     username = data.get("username", "")
     message = data.get("message", "")
+    donation_id = data.get("id", 0)
     
-    if amount not in [150, 990]:
-        return JSONResponse({"status": "ignored", "reason": "not_vpn_payment"})
+    logger.info(f"DA webhook: id={donation_id} amount={amount} username={username}")
     
     user = None
     message_parts = message.split() if message else []
