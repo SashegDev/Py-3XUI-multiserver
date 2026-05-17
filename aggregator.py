@@ -675,25 +675,41 @@ async def webhook_donationalerts(request: Request):
     if not user and username:
         conn = get_db()
         try:
-            user = conn.execute("SELECT * FROM username = ? COLLATE NOCASE", (username,)).fetchone()
+            user = conn.execute("SELECT * FROM users WHERE username = ? COLLATE NOCASE", (username,)).fetchone()
         finally:
             conn.close()
     
     if not user:
         return JSONResponse({"status": "ignored", "reason": "user_not_found"})
     
-    days = 30 if amount == 150 else 365
+    tiers_config = settings.get("tiers", {})
+    tier = None
+    days = 0
+    
+    for tier_name, tier_data in tiers_config.items():
+        prices = tier_data.get("prices", {})
+        tier_days = tier_data.get("days", {})
+        for price_key, price_val in prices.items():
+            if amount == price_val:
+                tier = tier_name
+                days = tier_days.get(price_key, 30)
+                break
+        if tier:
+            break
+    
+    if not tier:
+        return JSONResponse({"status": "ignored", "reason": "amount_not_recognized"})
     
     conn = get_db()
     try:
         conn.execute("""
             UPDATE users SET 
-                tier = 'paid',
+                tier = ?,
                 tariff_days_bought = tariff_days_bought + ?,
                 tariff_days_remaining = tariff_days_remaining + ?,
                 total_paid_rubles = total_paid_rubles + ?
             WHERE id = ?
-        """, (days, days, amount, user["id"]))
+        """, (tier, days, days, amount, user["id"]))
         conn.commit()
     finally:
         conn.close()
@@ -1350,7 +1366,24 @@ async def poll_donationalerts():
                     username = donation.get("username", "")
                     message = donation.get("message", "")
                     
-                    if amount not in [150, 990]:
+                    tiers_config = settings.get("tiers", {})
+                    
+                    tier = None
+                    days = 0
+                    
+                    for tier_name, tier_data in tiers_config.items():
+                        prices = tier_data.get("prices", {})
+                        tier_days = tier_data.get("days", {})
+                        for price_key, price_val in prices.items():
+                            if amount == price_val:
+                                tier = tier_name
+                                days = tier_days.get(price_key, 30)
+                                break
+                        if tier:
+                            break
+                    
+                    if not tier:
+                        logger.info(f"DA: ignoring amount {amount} RUB (not in config)")
                         last_donation_id = donation_id
                         continue
                     
@@ -1371,17 +1404,6 @@ async def poll_donationalerts():
                             user = conn.execute("SELECT * FROM users WHERE username = ? COLLATE NOCASE", (username,)).fetchone()
                         
                         if user:
-                            tier = "paid"
-                            if amount == 50:
-                                tier = "test"
-                                days = 7
-                            elif amount == 150:
-                                days = 30
-                            elif amount == 990:
-                                days = 365
-                            else:
-                                continue
-                            
                             current_expiry = user.get("tariff_days_remaining", 0)
                             if current_expiry > 0:
                                 new_expiry = current_expiry + days
